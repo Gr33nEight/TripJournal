@@ -12,7 +12,7 @@ class JournalServiceLive: JournalService {
         configuration.timeoutIntervalForResource = 60.0
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         
-        self.urlSession = URLSession(configuration: configuration)
+        urlSession = URLSession(configuration: configuration)
     }
     
     @Published private var token: Token? {
@@ -34,8 +34,7 @@ class JournalServiceLive: JournalService {
         case handleTrip(String)
         case events
         case handleEvent(String)
-        case medias
-        case mediasUploaded
+        case media
         case handleMedia(String)
         
         private var stringValue: String {
@@ -52,12 +51,10 @@ class JournalServiceLive: JournalService {
                 return EndPoints.base + "events"
             case .handleEvent(let eventId):
                 return EndPoints.base + "events/\(eventId)"
-            case .medias:
-                return EndPoints.base + "medias"
-            case .mediasUploaded:
-                return EndPoints.base + "mediasUploaded"
+            case .media:
+                return EndPoints.base + "media"
             case .handleMedia(let mediaId):
-                return EndPoints.base + "medias/\(mediaId)"
+                return EndPoints.base + "media/\(mediaId)"
                 
             }
         }
@@ -107,12 +104,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
 
-        var requestURL = URLRequest(url: EndPoints.trips.url)
-        requestURL.httpMethod = HTTPMethods.POST.rawValue
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
-
+        var requestURL = try createRequest(method: .POST, endPoint: .trips, token: token)
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
 
@@ -131,10 +123,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
         
-        var requestURL = URLRequest(url: EndPoints.trips.url)
-        requestURL.httpMethod = HTTPMethods.GET.rawValue
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
+        let requestURL = try createRequest(method: .GET, endPoint: .trips, token: token)
         
         do {
             let trips = try await performNetworkRequest(requestURL, responseType: [Trip].self)
@@ -151,10 +140,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
         
-        var requestURL = URLRequest(url: EndPoints.handleTrip(tripId.description).url)
-        requestURL.httpMethod = HTTPMethods.GET.rawValue
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
+        let requestURL = try createRequest(method: .GET, endPoint: .handleTrip(tripId.description), token: token)
         
         do {
             let trip = try await performNetworkRequest(requestURL, responseType: Trip.self)
@@ -169,11 +155,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
         
-        var requestURL = URLRequest(url: EndPoints.handleTrip(tripId.description).url)
-        requestURL.httpMethod = HTTPMethods.PUT.rawValue
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
+        var requestURL = try createRequest(method: .PUT, endPoint: .handleTrip(tripId.description), token: token)
         
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
@@ -192,11 +174,8 @@ extension JournalServiceLive {
         guard let token = token else {
             throw NetworkError.invalidValue
         }
-        let url = EndPoints.handleTrip(tripId.description).url
-        var requestURL = URLRequest(url: url)
-        requestURL.httpMethod = HTTPMethods.DELETE.rawValue
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
         
+        let requestURL = try createRequest(method: .DELETE, endPoint: .handleTrip(tripId.description), token: token)
         try await performVoidNetworkRequest(requestURL)
     }
 }
@@ -226,6 +205,16 @@ extension JournalServiceLive {
         request.httpBody = loginData.data(using: .utf8)
         
         return request
+    }
+    
+    private func createRequest(method: HTTPMethods, endPoint: EndPoints, token: Token) throws -> URLRequest {
+        var requestURL = URLRequest(url: endPoint.url)
+        requestURL.httpMethod = method.rawValue
+        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
+        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
+        requestURL.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
+        
+        return requestURL
     }
     
     private func performNetworkRequest<T: Codable>(_ request: URLRequest, responseType: T.Type) async throws -> T {
@@ -273,11 +262,7 @@ extension JournalServiceLive {
         guard let token = token else {
             throw NetworkError.invalidValue
         }
-        var requestUrl = URLRequest(url: EndPoints.events.url)
-        requestUrl.httpMethod = HTTPMethods.POST.rawValue
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestUrl.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
+        var requestURL = try createRequest(method: .POST, endPoint: .events, token: token)
         
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
@@ -296,9 +281,9 @@ extension JournalServiceLive {
             "location": location,
             "transition_from_previous": eventCreate.transitionFromPrevious ?? ""
         ]
-        requestUrl.httpBody = try JSONSerialization.data(withJSONObject: eventData)
+        requestURL.httpBody = try JSONSerialization.data(withJSONObject: eventData)
 
-        return try await performNetworkRequest(requestUrl, responseType: Event.self)
+        return try await performNetworkRequest(requestURL, responseType: Event.self)
     }
 
     func updateEvent(withId eventId: Event.ID, and eventUpdate: EventUpdate) async throws -> Event {
@@ -306,11 +291,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
         
-        var requestUrl = URLRequest(url: EndPoints.handleEvent(eventId.description).url)
-        requestUrl.httpMethod = HTTPMethods.PUT.rawValue
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestUrl.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
+        var requestURL = try createRequest(method: .PUT, endPoint: .handleEvent(eventId.description), token: token)
         
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
@@ -328,9 +309,9 @@ extension JournalServiceLive {
             "location": location,
             "transition_from_previous": eventUpdate.transitionFromPrevious ?? ""
         ]
-        requestUrl.httpBody = try JSONSerialization.data(withJSONObject: eventData)
+        requestURL.httpBody = try JSONSerialization.data(withJSONObject: eventData)
         
-        return try await performNetworkRequest(requestUrl, responseType: Event.self)
+        return try await performNetworkRequest(requestURL, responseType: Event.self)
     }
 
     func deleteEvent(withId eventId: Event.ID) async throws {
@@ -338,10 +319,7 @@ extension JournalServiceLive {
             throw NetworkError.invalidValue
         }
         
-        let url = EndPoints.handleEvent(eventId.description).url
-        var requestURL = URLRequest(url: url)
-        requestURL.httpMethod = HTTPMethods.DELETE.rawValue
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
+        var requestURL = try createRequest(method: .DELETE, endPoint: .handleEvent(eventId.description), token: token)
         
         try await performVoidNetworkRequest(requestURL)
     }
@@ -350,75 +328,26 @@ extension JournalServiceLive {
         guard let token = token else {
             throw NetworkError.invalidValue
         }
-        let mediaUrl = try await uploadImageAndGetUrl(imageData: mediaCreate.base64Data)
-        
-        print(mediaUrl)
 
-        var requestUrl = URLRequest(url: EndPoints.medias.url)
-        requestUrl.httpMethod = HTTPMethods.POST.rawValue
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.accept.rawValue)
-        requestUrl.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-        requestUrl.addValue(MIMEType.JSON.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
+        var requestURL = try createRequest(method: .POST, endPoint: .media, token: token)
 
         let mediaData: [String: Any] = [
             "event_id": mediaCreate.eventId,
-            "url": mediaUrl.absoluteString
+            "base64_data": mediaCreate.base64Data.base64EncodedString()
         ]
 
-        requestUrl.httpBody = try JSONSerialization.data(withJSONObject: mediaData)
+        requestURL.httpBody = try JSONSerialization.data(withJSONObject: mediaData)
         
-        return try await performNetworkRequest(requestUrl, responseType: Media.self)
+        return try await performNetworkRequest(requestURL, responseType: Media.self)
     }
-
-
-    func uploadImageAndGetUrl(imageData: Data) async throws -> URL {
-        guard let token = token else {
-            throw NetworkError.invalidValue
-        }
-
-        var uploadRequest = URLRequest(url: EndPoints.medias.url)
-        uploadRequest.httpMethod = HTTPMethods.POST.rawValue
-        uploadRequest.addValue(MIMEType.multipartFromData.rawValue, forHTTPHeaderField: HTTPHeaders.contentType.rawValue)
-        uploadRequest.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
-
-        let (data, response) = try await urlSession.upload(for: uploadRequest, from: imageData)
-        
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NetworkError.badResponse
-        }
-
-        let decoder = JSONDecoder()
-        let uploadResponse = try decoder.decode(UploadResponse.self, from: data)
-        
-        guard let uploadedUrl = uploadResponse.url else {
-            throw NetworkError.badResponse
-        }
-
-        return uploadedUrl
-    }
-
-
     
     func deleteMedia(withId mediaId: Media.ID) async throws {
         guard let token = token else {
             throw NetworkError.invalidValue
         }
         
-        let url = EndPoints.handleMedia(mediaId.description).url
-        var requestURL = URLRequest(url: url)
-        requestURL.httpMethod = HTTPMethods.DELETE.rawValue
-        requestURL.addValue("Bearer \(token.accessToken)", forHTTPHeaderField: HTTPHeaders.authorization.rawValue)
+        var requestURL = try createRequest(method: .DELETE, endPoint: .handleMedia(mediaId.description), token: token)
         
         try await performVoidNetworkRequest(requestURL)
-    }
-}
-
-
-
-extension Data {
-    mutating func append(_ string: String) {
-        if let data = string.data(using: .utf8) {
-            append(data)
-        }
     }
 }
